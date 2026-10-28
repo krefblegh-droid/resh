@@ -125,7 +125,9 @@ function publicCharacter(c) {
     name: c.name,
     forms: Object.values(c.forms || {}).map((f) => ({
       font: f.font,
-      image: '/images/' + f.file,
+      unsupported: !!f.unsupported,
+      // Unsupported forms all share one static image instead of storing a copy each.
+      image: f.unsupported ? '/tofu.png' : '/images/' + f.file,
     })),
   };
 }
@@ -212,24 +214,33 @@ async function handleApi(req, res, url) {
       return json(res, 200, publicCharacter(char));
     }
 
-    // POST /api/characters/:code/forms  { font, image: dataURL }
+    // POST /api/characters/:code/forms  { font, image: dataURL } or { font, unsupported: true }
     if (parts.length === 3 && parts[2] === 'forms' && req.method === 'POST') {
       if (!isAuthorized(req)) return json(res, 401, { error: 'Not authorized' });
       if (!char) return json(res, 404, { error: 'Character not registered' });
       const body = await readJson(req);
       const font = normalizeFont(body.font);
       if (!font) return json(res, 400, { error: 'Font name is required.' });
+      const key = font.toLowerCase();
+      const old = char.forms[key];
+      const removeOldFile = () => { if (old && old.file) fs.rm(path.join(IMAGE_DIR, old.file), () => {}); };
+
+      if (body.unsupported === true) {
+        char.forms[key] = { font, unsupported: true };
+        saveDb();
+        removeOldFile();
+        return json(res, 201, publicCharacter(char));
+      }
+
       const m = /^data:([\w/+.-]+);base64,(.+)$/.exec(String(body.image || ''));
       const ext = m && IMAGE_TYPES[m[1]];
       if (!ext) return json(res, 400, { error: 'Upload a PNG, JPEG, GIF, WebP or SVG image.' });
 
-      const key = font.toLowerCase();
-      const old = char.forms[key];
       const file = `${code}-${crypto.randomBytes(6).toString('hex')}.${ext}`;
       fs.writeFileSync(path.join(IMAGE_DIR, file), Buffer.from(m[2], 'base64'));
-      if (old) fs.rm(path.join(IMAGE_DIR, old.file), () => {});
       char.forms[key] = { font, file };
       saveDb();
+      removeOldFile();
       return json(res, 201, publicCharacter(char));
     }
   }

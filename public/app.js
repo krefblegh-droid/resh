@@ -161,7 +161,10 @@
         <input type="file" id="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" required>
         <img class="preview" id="preview" alt="Preview" hidden>
         <p class="error" id="form-error"></p>
-        <div class="row"><button class="btn" type="submit" id="upload-btn">Upload</button></div>
+        <div class="row">
+          <button class="btn secondary" type="button" id="unsupported-btn" title="Use the shared tofu image for this font">Unsupported</button>
+          <button class="btn" type="submit" id="upload-btn">Upload</button>
+        </div>
       </form>`;
 
     const fileInput = document.getElementById('file');
@@ -181,23 +184,32 @@
       reader.readAsDataURL(file);
     });
 
-    document.getElementById('add-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
+    const fontInput = document.getElementById('font');
+    const buttons = [document.getElementById('upload-btn'), document.getElementById('unsupported-btn')];
+
+    async function saveForm(payload) {
       errorEl.textContent = '';
-      if (!dataUrl) { errorEl.textContent = 'Choose an image file.'; return; }
-      const btn = document.getElementById('upload-btn');
-      btn.disabled = true;
-      const font = document.getElementById('font').value.trim();
+      const font = fontInput.value.trim();
+      if (!font) { errorEl.textContent = 'Enter the font name.'; fontInput.focus(); return; }
+      buttons.forEach((b) => { b.disabled = true; });
       try {
-        await api(`/characters/${char.code}/forms`, { method: 'POST', body: JSON.stringify({ font, image: dataUrl }) });
+        await api(`/characters/${char.code}/forms`, { method: 'POST', body: JSON.stringify({ font, ...payload }) });
         preferredFont = font;
         location.hash = `#/char/${char.code}`;
       } catch (err) {
         errorEl.textContent = err.message;
-        btn.disabled = false;
+        buttons.forEach((b) => { b.disabled = false; });
         if (err.status === 401) goProtected(location.hash);
       }
+    }
+
+    document.getElementById('add-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!dataUrl) { errorEl.textContent = 'Choose an image file.'; return; }
+      saveForm({ image: dataUrl });
     });
+    // Marks the font as not supporting this character; the server uses the shared tofu image.
+    document.getElementById('unsupported-btn').addEventListener('click', () => saveForm({ unsupported: true }));
   }
 
   async function viewEditor() {
