@@ -11,8 +11,10 @@ const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const IMAGE_DIR = path.join(DATA_DIR, 'images');
+const FONT_DIR = path.join(DATA_DIR, 'fonts');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 const MAX_BODY = 8 * 1024 * 1024; // 8 MB (base64 image upload)
+const MAX_FONT = 30 * 1024 * 1024; // 30 MB (raw font upload)
 const TOKEN_TTL = 12 * 60 * 60 * 1000; // 12 hours
 
 if (!process.env.ADMIN_PASSWORD) {
@@ -20,6 +22,7 @@ if (!process.env.ADMIN_PASSWORD) {
 }
 
 fs.mkdirSync(IMAGE_DIR, { recursive: true });
+fs.mkdirSync(FONT_DIR, { recursive: true });
 
 // ---------- Storage ----------
 function loadDb() {
@@ -30,6 +33,7 @@ function loadDb() {
   }
 }
 let db = loadDb();
+db.fontFiles = db.fontFiles || {}; // key (lowercase name) -> { name, file }
 function saveDb() {
   const tmp = DB_FILE + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
@@ -80,6 +84,14 @@ function normalizeFont(raw) {
   if (!s || s.length > 100) return null;
   return s;
 }
+// Identifies TrueType / OpenType files by their first four bytes.
+function fontExtension(buf) {
+  if (buf.length < 12) return null;
+  const tag = buf.toString('latin1', 0, 4);
+  if (tag === '\x00\x01\x00\x00' || tag === 'true') return 'ttf';
+  if (tag === 'OTTO') return 'otf';
+  return null;
+}
 const IMAGE_TYPES = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -96,28 +108,30 @@ function send(res, status, body, headers = {}) {
 function json(res, status, obj) {
   send(res, status, JSON.stringify(obj), { 'Content-Type': 'application/json; charset=utf-8' });
 }
-function readJson(req) {
+function readBody(req, limit) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY) {
+      if (size > limit) {
         reject(Object.assign(new Error('Payload too large'), { status: 413 }));
         req.destroy();
         return;
       }
       chunks.push(c);
     });
-    req.on('end', () => {
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
-      } catch {
-        reject(Object.assign(new Error('Invalid JSON'), { status: 400 }));
-      }
-    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
     req.on('error', reject);
   });
+}
+async function readJson(req) {
+  const buf = await readBody(req, MAX_BODY);
+  try {
+    return JSON.parse(buf.toString('utf8') || '{}');
+  } catch {
+    throw Object.assign(new Error('Invalid JSON'), { status: 400 });
+  }
 }
 function publicCharacter(c) {
   return {
@@ -130,6 +144,11 @@ function publicCharacter(c) {
       image: f.unsupported ? '/tofu.png' : '/images/' + f.file,
     })),
   };
+}
+function listFontFiles() {
+  return Object.values(db.fontFiles)
+    .map((f) => ({ name: f.name, url: '/fonts/' + f.file }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 function allFonts() {
   const set = new Set();
@@ -148,6 +167,8 @@ const MIME = {
   '.gif': 'image/gif',
   '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
 };
 function serveFile(res, baseDir, rel, extraHeaders = {}) {
   const filePath = path.normalize(path.join(baseDir, rel));
@@ -180,6 +201,42 @@ async function handleApi(req, res, url) {
   // GET /api/fonts
   if (parts[0] === 'fonts' && req.method === 'GET') {
     return json(res, 200, allFonts());
+  }
+
+  // Font files for the Test font page.
+  if (parts[0] === 'font-files') {
+    // GET /api/font-files
+    if (parts.length === 1 && req.method === 'GET') return json(res, 200, listFontFiles());
+
+    // POST /api/font-files?name=...  (body: the raw .ttf/.otf file)
+    if (parts.length === 1 && req.method === 'POST') {
+      if (!isAuthorized(req)) return json(res, 401, { error: 'Not authorized' });
+      const name = normalizeFont(url.searchParams.get('name'));
+      if (!name) return json(res, 400, { error: 'Font name is required.' });
+      const buf = await readBody(req, MAX_FONT);
+      const ext = fontExtension(buf);
+      if (!ext) return json(res, 400, { error: 'Upload a .ttf or .otf font file.' });
+      const key = name.toLowerCase();
+      const old = db.fontFiles[key];
+      const file = `font-${crypto.randomBytes(6).toString('hex')}.${ext}`;
+      fs.writeFileSync(path.join(FONT_DIR, file), buf);
+      db.fontFiles[key] = { name, file };
+      saveDb();
+      if (old) fs.rm(path.join(FONT_DIR, old.file), () => {});
+      return json(res, 201, listFontFiles());
+    }
+
+    // DELETE /api/font-files/:name
+    if (parts.length === 2 && req.method === 'DELETE') {
+      if (!isAuthorized(req)) return json(res, 401, { error: 'Not authorized' });
+      const key = decodeURIComponent(parts[1]).toLowerCase();
+      const old = db.fontFiles[key];
+      if (!old) return json(res, 404, { error: 'Font not found' });
+      delete db.fontFiles[key];
+      saveDb();
+      fs.rm(path.join(FONT_DIR, old.file), () => {});
+      return json(res, 200, listFontFiles());
+    }
   }
 
   if (parts[0] === 'characters') {
@@ -256,6 +313,11 @@ const server = http.createServer(async (req, res) => {
       // SVG uploads get a strict CSP so they cannot run scripts.
       return serveFile(res, IMAGE_DIR, url.pathname.slice('/images/'.length), {
         'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
+        'X-Content-Type-Options': 'nosniff',
+      });
+    }
+    if (url.pathname.startsWith('/fonts/')) {
+      return serveFile(res, FONT_DIR, url.pathname.slice('/fonts/'.length), {
         'X-Content-Type-Options': 'nosniff',
       });
     }

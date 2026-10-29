@@ -23,6 +23,12 @@
   }
 }
 
+/* Draws every character as a box; used after the tested font on the Test font page. */
+@font-face {
+  font-family: "Resh Tofu";
+  src: url("/tofu-fallback.ttf") format("truetype");
+}
+
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
@@ -111,6 +117,37 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .preview { max-width: 160px; max-height: 160px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
 .back { display: inline-block; margin-bottom: 16px; color: var(--accent); }
 
+h2 { font-size: 1.25rem; margin: 32px 0 12px; }
+.btn.small { padding: 4px 12px; font-size: 14px; font-weight: 500; }
+
+/* ---------- Font list (Editor) ---------- */
+.font-list { list-style: none; margin: 12px 0 0; padding: 0; }
+.font-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 4px; border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Test font ---------- */
+.tester { display: flex; flex-direction: column; gap: 16px; }
+.tester-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.tester-controls select { width: auto; min-width: 0; max-width: 100%; flex: 1 1 200px; }
+.tf-size { display: flex; align-items: center; gap: 8px; flex: 1 1 200px; }
+.tf-size input { flex: 1; min-width: 0; accent-color: var(--accent); }
+.tf-size span { min-width: 5ch; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tf-check { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--muted); }
+.tf-check input { accent-color: var(--accent); width: 18px; height: 18px; }
+#tf-preview {
+  width: 100%; min-height: 45vh;
+  padding: 16px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text);
+  line-height: 1.3; resize: vertical;
+  overflow-wrap: anywhere;
+}
+#tf-preview:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tester .muted:empty { display: none; }
+
 /* ---------- Modal ---------- */
 .modal {
   position: fixed; inset: 0; z-index: 100;
@@ -131,5 +168,6 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1p
 @media (max-width: 480px) {
   h1 { font-size: 1.35rem; }
   .brand { font-size: 15px; }
-  .nav-btn { padding: 6px 10px; }
+  .nav-btn { padding: 6px 8px; font-size: 14px; }
+  nav { gap: 6px; }
 }

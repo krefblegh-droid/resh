@@ -2,11 +2,14 @@
 //   #/characters              list of registered characters
 //   #/char/2588               "Character U+2588" page
 //   #/char/2588/add-form      upload a glyph image for a font (password)
-//   #/edit                    editor: register a new character (password)
+//   #/edit                    editor: register a character, add font files (password)
+//   #/test-font               type text and preview it in an uploaded font
 (() => {
   const app = document.getElementById('app');
   const TOKEN_KEY = 'glyph-token';
   let preferredFont = null; // font to preselect on the next character page
+  const tester = { text: 'Type here to preview the font', font: '', size: 64, tofu: true }; // kept while browsing
+  const loadedFaces = new Map(); // font file url -> CSS family name
 
   // ---------- Utilities ----------
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -14,7 +17,7 @@
   const setToken = (t) => { try { t ? sessionStorage.setItem(TOKEN_KEY, t) : sessionStorage.removeItem(TOKEN_KEY); } catch {} };
 
   async function api(path, options = {}) {
-    const headers = { 'Content-Type': 'application/json' };
+    const headers = { 'Content-Type': 'application/json', ...options.headers };
     const token = getToken();
     if (token) headers.Authorization = 'Bearer ' + token;
     const res = await fetch('/api' + path, { ...options, headers });
@@ -223,7 +226,16 @@
         <input type="text" id="name" placeholder="Name" maxlength="200" required spellcheck="false" autocapitalize="characters">
         <p class="error" id="reg-error"></p>
         <div class="row"><button class="btn" type="submit">Register</button></div>
-      </form>`;
+      </form>
+
+      <h2>Add font</h2>
+      <form class="card stack" id="font-form" autocomplete="off">
+        <input type="text" id="font-name" placeholder="Font name" maxlength="100" required>
+        <input type="file" id="font-file" accept=".ttf,.otf,font/ttf,font/otf" required>
+        <p class="error" id="font-error"></p>
+        <div class="row"><button class="btn" type="submit" id="font-btn">Add font</button></div>
+      </form>
+      <ul class="font-list" id="font-list"></ul>`;
 
     const codeEl = document.getElementById('code');
     const nameEl = document.getElementById('name');
@@ -256,7 +268,129 @@
         if (err.status === 401) goProtected('#/edit');
       }
     });
+    // ----- Add font -----
+    const fontForm = document.getElementById('font-form');
+    const fontName = document.getElementById('font-name');
+    const fontFile = document.getElementById('font-file');
+    const fontError = document.getElementById('font-error');
+    const fontBtn = document.getElementById('font-btn');
+    const fontList = document.getElementById('font-list');
+
+    function renderFontList(fonts) {
+      fontList.innerHTML = fonts.length
+        ? fonts.map((f) => `<li><span>${esc(f.name)}</span><button type="button" class="btn secondary small" data-delete="${esc(f.name)}">Delete</button></li>`).join('')
+        : '<li class="muted">No fonts added yet.</li>';
+    }
+    api('/font-files').then(renderFontList).catch(() => {});
+
+    // Suggest a name from the file name.
+    fontFile.addEventListener('change', () => {
+      const file = fontFile.files[0];
+      if (file && !fontName.value.trim()) fontName.value = file.name.replace(/\.(ttf|otf)$/i, '').replace(/[-_]+/g, ' ');
+    });
+
+    fontForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      fontError.textContent = '';
+      const file = fontFile.files[0];
+      if (!/\.(ttf|otf)$/i.test(file.name)) { fontError.textContent = 'Choose a .ttf or .otf file.'; return; }
+      if (file.size > 30 * 1024 * 1024) { fontError.textContent = 'Font files must be 30 MB or smaller.'; return; }
+      fontBtn.disabled = true;
+      try {
+        const fonts = await api('/font-files?name=' + encodeURIComponent(fontName.value.trim()), {
+          method: 'POST', body: file, headers: { 'Content-Type': 'application/octet-stream' },
+        });
+        renderFontList(fonts);
+        fontForm.reset();
+      } catch (err) {
+        fontError.textContent = err.message;
+        if (err.status === 401) goProtected('#/edit');
+      }
+      fontBtn.disabled = false;
+    });
+
+    fontList.addEventListener('click', async (e) => {
+      const name = e.target.dataset.delete;
+      if (!name || !confirm(`Delete the font "${name}"?`)) return;
+      try {
+        renderFontList(await api('/font-files/' + encodeURIComponent(name), { method: 'DELETE' }));
+      } catch (err) {
+        fontError.textContent = err.message;
+      }
+    });
+
     codeEl.focus();
+  }
+
+  async function viewTestFont() {
+    setActiveNav('test');
+    setTitle('Test font');
+    app.innerHTML = '<h1>Test font</h1><p class="muted">Loading…</p>';
+    const fonts = await api('/font-files');
+    if (!fonts.length) {
+      app.innerHTML = '<h1>Test font</h1><p class="muted">No fonts yet. Add .ttf or .otf files with <b>Edit → Add font</b>.</p>';
+      return;
+    }
+    if (!fonts.some((f) => f.name === tester.font)) tester.font = fonts[0].name;
+
+    app.innerHTML = `
+      <h1>Test font</h1>
+      <div class="card tester">
+        <div class="tester-controls">
+          <select id="tf-font" aria-label="Font">
+            ${fonts.map((f) => `<option value="${esc(f.name)}"${f.name === tester.font ? ' selected' : ''}>${esc(f.name)}</option>`).join('')}
+          </select>
+          <label class="tf-size">
+            <input type="range" id="tf-size" min="8" max="200" value="${tester.size}" aria-label="Font size">
+            <span id="tf-size-val">${tester.size}px</span>
+          </label>
+          <label class="tf-check"><input type="checkbox" id="tf-tofu"${tester.tofu ? ' checked' : ''}> Show missing characters as tofu</label>
+        </div>
+        <textarea id="tf-preview" spellcheck="false" aria-label="Preview text"></textarea>
+        <p class="muted" id="tf-status"></p>
+      </div>`;
+
+    const select = document.getElementById('tf-font');
+    const size = document.getElementById('tf-size');
+    const sizeVal = document.getElementById('tf-size-val');
+    const tofu = document.getElementById('tf-tofu');
+    const preview = document.getElementById('tf-preview');
+    const status = document.getElementById('tf-status');
+    preview.value = tester.text;
+
+    async function applyFont() {
+      const font = fonts.find((f) => f.name === select.value);
+      tester.font = font.name;
+      let family = loadedFaces.get(font.url);
+      if (!family) {
+        status.textContent = 'Loading font…';
+        family = 'ReshTest' + loadedFaces.size;
+        try {
+          const face = await new FontFace(family, `url("${font.url}")`).load();
+          document.fonts.add(face);
+          loadedFaces.set(font.url, family);
+        } catch {
+          status.textContent = `Could not load "${font.name}". The file may be damaged.`;
+          return;
+        }
+        if (select.value !== font.name) return; // user picked another font meanwhile
+      }
+      status.textContent = '';
+      // The fallback decides what happens to characters the font lacks.
+      preview.style.fontFamily = `"${family}", ${tofu.checked ? '"Resh Tofu"' : 'system-ui, sans-serif'}`;
+    }
+    function applySize() {
+      tester.size = Number(size.value);
+      sizeVal.textContent = tester.size + 'px';
+      preview.style.fontSize = tester.size + 'px';
+    }
+
+    select.addEventListener('change', applyFont);
+    size.addEventListener('input', applySize);
+    tofu.addEventListener('change', () => { tester.tofu = tofu.checked; applyFont(); });
+    preview.addEventListener('input', () => { tester.text = preview.value; });
+    applySize();
+    await applyFont();
   }
 
   // ---------- Router ----------
@@ -268,6 +402,7 @@
       if (parts[0] === 'char' && parts[1] && parts[2] === 'add-form') return await viewAddForm(parts[1].toUpperCase());
       if (parts[0] === 'char' && parts[1]) return await viewCharacter(parts[1].toUpperCase());
       if (parts[0] === 'edit') return await viewEditor();
+      if (parts[0] === 'test-font') return await viewTestFont();
       if (parts[0] !== 'characters') { location.replace('#/characters'); return; }
       await viewCharacters();
     } catch (err) {
