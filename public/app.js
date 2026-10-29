@@ -8,7 +8,7 @@
   const app = document.getElementById('app');
   const TOKEN_KEY = 'glyph-token';
   let preferredFont = null; // font to preselect on the next character page
-  const tester = { text: 'Type here to preview the font', font: '', size: 64, tofu: true }; // kept while browsing
+  const tester = { text: 'Type here to preview the font', font: '', size: 35, tofu: true }; // kept while browsing
   const loadedFaces = new Map(); // font file url -> CSS family name
 
   // ---------- Utilities ----------
@@ -341,8 +341,9 @@
             ${fonts.map((f) => `<option value="${esc(f.name)}"${f.name === tester.font ? ' selected' : ''}>${esc(f.name)}</option>`).join('')}
           </select>
           <label class="tf-size">
-            <input type="range" id="tf-size" min="8" max="200" value="${tester.size}" aria-label="Font size">
-            <span id="tf-size-val">${tester.size}px</span>
+            Size
+            <input type="text" id="tf-size" inputmode="decimal" maxlength="5" value="${tester.size}" aria-label="Font size in pixels">
+            <span>px</span>
           </label>
           <label class="tf-check"><input type="checkbox" id="tf-tofu"${tester.tofu ? ' checked' : ''}> Show missing characters as tofu</label>
         </div>
@@ -352,7 +353,6 @@
 
     const select = document.getElementById('tf-font');
     const size = document.getElementById('tf-size');
-    const sizeVal = document.getElementById('tf-size-val');
     const tofu = document.getElementById('tf-tofu');
     const preview = document.getElementById('tf-preview');
     const status = document.getElementById('tf-status');
@@ -379,14 +379,24 @@
       // The fallback decides what happens to characters the font lacks.
       preview.style.fontFamily = `"${family}", ${tofu.checked ? '"Resh Tofu"' : 'system-ui, sans-serif'}`;
     }
+    // Applies the typed size once it is a number from 1 to 500; otherwise keeps the last good size.
     function applySize() {
-      tester.size = Number(size.value);
-      sizeVal.textContent = tester.size + 'px';
-      preview.style.fontSize = tester.size + 'px';
+      const value = Number(size.value);
+      const valid = /^\d+(\.\d+)?$/.test(size.value.trim()) && value >= 1 && value <= 500;
+      size.classList.toggle('invalid', !valid);
+      if (!valid) return;
+      tester.size = value;
+      preview.style.fontSize = value + 'px';
+    }
+    function resetSizeField() {
+      size.value = tester.size;
+      size.classList.remove('invalid');
     }
 
     select.addEventListener('change', applyFont);
     size.addEventListener('input', applySize);
+    size.addEventListener('blur', resetSizeField);
+    size.addEventListener('keydown', (e) => { if (e.key === 'Enter') { resetSizeField(); preview.focus(); } });
     tofu.addEventListener('change', () => { tester.tofu = tofu.checked; applyFont(); });
     preview.addEventListener('input', () => { tester.text = preview.value; });
     applySize();

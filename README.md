@@ -23,7 +23,7 @@ Data is stored in `data/db.json`, uploaded images go in `data/images/` and font 
 - **Character U+XXXX** (`#/char/2588`): a box with a font dropdown under it. Choosing a font shows that font's image of the character. If a font has no image for this character, the box says so. **Add form** (password) uploads an image for a font.
 - **Edit** (password): the Editor, with **Code** (hex, e.g. `2588`) and **Name** (Basic Latin only, auto-capitalised) fields and a **Register** button.
   The Editor also has **Add font**, which uploads a `.ttf` or `.otf` file (up to 30 MB) for the Test font page, and lists added fonts with a Delete button.
-- **Test font** (`#/test-font`): pick an added font, type in the preview box and adjust the size. With **Show missing characters as tofu** on, characters the font lacks show as boxes instead of being drawn in another font.
+- **Test font** (`#/test-font`): pick an added font, type in the preview box and type a text size in pixels (1–500, default 35). With **Show missing characters as tofu** on, characters the font lacks show as boxes instead of being drawn in another font.
 
 On the Add form page, **Unsupported** marks the font as not supporting the character. Every unsupported form shows the same shared image (`public/tofu.png`), so no copy is uploaded or stored for each one.
 

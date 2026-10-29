@@ -132,9 +132,9 @@ h2 { font-size: 1.25rem; margin: 32px 0 12px; }
 .tester { display: flex; flex-direction: column; gap: 16px; }
 .tester-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
 .tester-controls select { width: auto; min-width: 0; max-width: 100%; flex: 1 1 200px; }
-.tf-size { display: flex; align-items: center; gap: 8px; flex: 1 1 200px; }
-.tf-size input { flex: 1; min-width: 0; accent-color: var(--accent); }
-.tf-size span { min-width: 5ch; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tf-size { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 15px; }
+.tf-size input { width: 5.5em; padding: 8px 10px; text-align: right; font-variant-numeric: tabular-nums; }
+.tf-size input.invalid { border-color: var(--error); outline-color: var(--error); }
 .tf-check { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--muted); }
 .tf-check input { accent-color: var(--accent); width: 18px; height: 18px; }
 #tf-preview {
