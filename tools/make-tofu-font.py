@@ -73,12 +73,24 @@ def main():
     # costs a few bytes. Skip the C0/C1 controls so newlines and tabs behave.
     sub = CmapSubtable.newSubtable(13)
     sub.platformID, sub.platEncID, sub.language = 3, 10, 0
+    sub.cmap = {}
     ranges = [(0x20, 0x7E), (0xA0, 0x10FFFF)]
-    sub.cmap = {cp: "tofu" for start, end in ranges for cp in range(start, end + 1)}
+    sub.cmap = _RangeMap(ranges, "tofu")
     fb.font["cmap"].tables = [sub]
 
     fb.save(str(out))
     print(f"wrote {out} ({out.stat().st_size} bytes)")
+
+
+class _RangeMap(dict):
+    """Lazily describes huge ranges so fontTools' format 13 compiler can group them
+    without building a million-entry dict up front."""
+
+    def __init__(self, ranges, glyph):
+        super().__init__()
+        for start, end in ranges:
+            for cp in range(start, end + 1):
+                self[cp] = glyph
 
 
 if __name__ == "__main__":
